@@ -1,0 +1,344 @@
+---
+title: Bivariate Analysis
+format: 
+    html:
+        code-fold: true
+jupyter: python3
+execute: 
+    cache: true
+---
+
+## Introduction
+
+Welcome to the fifth notebook of our project! In this notebook, we will focus on a bivariate analysis of the data from the US Bureau of Transportation. The data was collected in `01-data_collection.ipynb`, prepared in `02-data_understanding.ipynb` and explored for each variable individually in notebooks `03-univariate_analysis.qmd` and `04-univariate_analysis_2.qmd`.
+
+The goal of this notebook is to understand the relationships and dependencies between pairs of variables in the dataset by means of a bivariate analysis. This type of analysis helps us identify potential correlations, associations, or patterns between pairs of variables. Given the amount of variables in the dataset, we will focus our analysis on answering the research questions we have defined in the beginning of the project. These include:
+
+1. How does on-time performance behave across time?
+2. How does on-time performance vary by carrier, route, airport, and aircraft type?
+3. Does delayed departure correlate with delayed arrival?
+
+Given there are different types of variables, bivariate analysis can be carried out from multiple perspectives. In this notebook, we will organize our analysis by the following variable type combinations:
+
+1.  Numerical vs. numerical
+2.  Numerical vs. categorical
+3.  Categorical vs. categorical
+
+We will use visualizations and statistical measures to analyze the relationships, measure correlations, and identify patterns between variables. By the end of this notebook, we will have a better understanding of the relationships between variables in the dataset, which will provide solid foundation for modeling.
+
+## Measuring On-Time Performance
+
+On-time performance measures the timeliness of various means of transportation. It offers a standardized method for comparing how well one provider adheres to its timetable against others. In measuring on-time performance, it is important to define a metric that aligns with industry standards. 
+
+In the context of the airline industry, the U.S. Department of Transportation (DOT) defines a flight as delayed if it arrives 15 minutes or more after its scheduled arrival time. This metric also aligns with common practice in the airline industry. After conducting the univariate analysis in the previous notebook, we have determined that the `DepDel15` and `ArrDel15` variables are an appropriate measure for on-time performance. These variables indicate whether a flight was delayed by 15 minutes or more at departure and arrival, respectively.
+
+By utilizing this metric, we can examine the proportion of delayed flights for each airline and identify any patterns or trends in on-time performance across different carriers.
+
+## Importing Packages and Data
+
+We will start by importing the necessary packages and loading the data. Similar to previous notebooks, we import the following packages:
+
+-   `pandas`: data manipulation and analysis
+-   `numpy`: optimizing vector and matrix operations
+-   `matplotlib.pyplot` and `seaborn`: data visualization
+-   `GridSpec`: customizing subplots
+-   `sys`: system-specific parameters
+-   `combinations`: generating all non-repeating combinations of a sequence
+-   `product`: generating the Cartesian product between two iterables
+
+In addition to these packages, we have created two custom modules:
+
+-   `variables`: contains variable groups
+-   `mac_functions`: imports custom data anlaysis functions
+
+Default settings for the visualizations are also set using `plt.rcParams` and `sns.set`. The data is loaded from the `parquet` file `04-airline_2m.parquet`, which is the result of our data analysis and cleaning in our previous notebook.
+
+```{python}
+#| code-fold: false
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+# from itertools import combinations, product
+
+from src.modules.variables_04 import *
+
+figsize = (14,8)
+plt.rcParams['figure.figsize'] = figsize
+sns.set(rc={'figure.figsize':figsize})
+pd.set_option('display.max_columns', 200)
+pd.options.display.float_format = '{:,.3f}'.format
+
+df = pd.read_parquet('./data/interim/04-airline_2m.parquet')
+```
+
+## Numerical vs numerical
+
+We will start the bivariate analysis by exploring the relationships between numerical variables. We will use various plots to visualize the relationships between pairs of numerical variables and calculate correlation coefficients to measure the strength and direction of the relationship between the variables.
+
+Let us start by exploring one of our research questions: How does on-time performance behave across time?
+
+### On-Time Performance Across Time
+
+We will start by analyzing the relationship between the `DepDel15` and `ArrDel15` variables across time. To do this, we will first agregate the counts and means of delayed flights by month-year date.
+
+```{python}
+df['FlightMonthYear'] = df['FlightDate'].astype('datetime64[ns]')
+df_time = df.groupby(pd.Grouper(key='FlightMonthYear', freq='ME'))[['DepDel15', 'ArrDel15']].agg(['sum', 'mean'])
+
+df_time.columns = ['_'.join(col) for col in df_time.columns.values]
+df_time = df_time.reset_index()
+df_time['FlightMonthYearOrdinal'] = df_time['FlightMonthYear'].map(pd.Timestamp.toordinal)
+display(df_time)
+```
+
+To plot the relationship, we will use two plots: a line plot to visualize the evolution in the number of delays across time, and a scatter plot to visualize the relationship between the two variables.
+
+```{python}
+fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+for col in ['DepDel15_sum', 'ArrDel15_sum']:
+    sns.lineplot(x='FlightMonthYear', y=col, data=df_time, ax=axes[0], label=col)
+    sns.regplot(x='FlightMonthYearOrdinal', y=col, data=df_time, ax=axes[1], label=col)
+
+label_freq = 48
+xticks = df_time['FlightMonthYearOrdinal'][3::label_freq]
+xticklabels = df_time['FlightMonthYear'][3::label_freq].dt.year
+
+axes[1].set_xticks(xticks)
+axes[1].set_xticklabels(xticklabels)
+
+for ax in axes:
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Number of Delays')
+    ax.legend()
+
+for year in df_time['FlightMonthYear'].dt.year.unique():
+    axes[0].axvline(x=pd.to_datetime(str(year)), color='white', linestyle='--', linewidth=0.5)
+
+axes[0].set_title('Evolution of Delays across Time')
+axes[1].set_title('Relationship between Departure and Arrival Delays')
+
+plt.savefig('./output/img/evolution-sum-delays.png')
+plt.show()
+```
+
+There are several observations that can be made from the plots both from a cross-sectional and longitudinal perspective.
+
+At a cross-sectional level, we can observe in the line plot that the number of departure and arrival delays fluctuates periodically, even within a single year. This suggests that delays may be influenced by seasonal factors. Moreover, there is a noticeable increase in the number delays between around 2003 and 2008, which may be due to external factors beyond the dataset, such as various events in the U.S. economy [insert footnote here].
+
+At a longitudinal level, we can observe in the regression plot that the number of departure and arrival delays follow a common evolution across time: the difference between departure and arrival delays narrows as time progresses. This can be seen in the closing gap between the regression lines. This might suggest an improvement in on-time performance over time with respect to arrival delays. 
+
+In addition to this, the plot seems to show that the overall number of delayed flights slightly increases throughout the dataset. This, however, is likely due to an increase in the number of flights over time, rather than an increase in flight delays themeselves. This can easily be verified by ploting the mean delays instead of the sum of delays, as shown below.
+
+```{python}
+fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+for col in ['DepDel15_mean', 'ArrDel15_mean']:
+    sns.lineplot(x='FlightMonthYear', y=col, data=df_time, ax=axes[0], label=col)
+    sns.regplot(x='FlightMonthYearOrdinal', y=col, data=df_time, ax=axes[1], label=col)
+
+label_freq = 48
+xticks = df_time['FlightMonthYearOrdinal'][3::label_freq]
+xticklabels = df_time['FlightMonthYear'][3::label_freq].dt.year
+
+axes[1].set_xticks(xticks)
+axes[1].set_xticklabels(xticklabels)
+
+for ax in axes:
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Number of Delays')
+    ax.legend()
+
+for year in df_time['FlightMonthYear'].dt.year.unique():
+    axes[0].axvline(x=pd.to_datetime(str(year)), color='white', linestyle='--', linewidth=0.5)
+
+axes[0].set_title('Evolution of Delays across Time')
+axes[1].set_title('Relationship between Departure and Arrival Delays')
+
+plt.savefig('./output/img/evolution-mean-delays.png')
+plt.show()
+```
+
+As demonstrated in the normalized plots above, the overall number of delayed flights remains relatively consistent when normalized by the total number of flights. That is, the proportion of delayed flights remains constant across time with respect to the total number of flights. This confirms that the apparent increase is due to an the overall number of flights, rather than a increase in delays themeselves. Below the comparision with the unnormalized plot:
+
+```{python}
+fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+for col in ['DepDel15_sum', 'ArrDel15_sum']:
+    sns.regplot(x='FlightMonthYearOrdinal', y=col, data=df_time, ax=axes[0], label=col)
+
+for col in ['DepDel15_mean', 'ArrDel15_mean']:
+    sns.regplot(x='FlightMonthYearOrdinal', y=col, data=df_time, ax=axes[1], label=col)
+
+label_freq = 48
+xticks = df_time['FlightMonthYearOrdinal'][3::label_freq]
+xticklabels = df_time['FlightMonthYear'][3::label_freq].dt.year
+
+for ax in axes:
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Number of Delays')
+    ax.legend()
+
+fig.suptitle('Evolution of Delays')
+fig.subplots_adjust(top=0.9)
+plt.savefig('./output/img/evolution-delays.png')
+plt.show()
+
+```
+
+There is however, another interesting observation that becomes clearer in the plot above. The gap between departure and arrival delays narrows over time and the volatility in the data decreases. As shown in the line plot, the data appears noisier in early years and stabilizes over time. The regression plot, on the other hand, shows a visible gap between departure and arrival delays in early years, which coalesces to around 20% delays by the end of the dataset. 
+
+A reduction in the gap between departure and arrival delays would have suggested an improvement in airline on-time performance, if it were not for the fact that the gap is closing due to an increase in departure delays rather than a decrease in arrival delays. This is an important distinction shown by the regression plot, as it indicates that, while arrival delays have reduced only slightly, departure delays have increased by 5% over the course of 30 years. This suggests that airlines are have been unable to improve on-time performance at arrival, and becoming less efficient in managing delays at departure.
+
+### Correlation between Departure and Arrival Delays
+
+Continuing with our analysis, we pursue another question stated at the beginning of this project: Does delayed departure correlate with delayed arrival?
+
+To answer this question, we will calculate the correlation coefficient between the `DepDelay` and `ArrDelay` variables. We will use the Pearson correlation coefficient, which measures the linear relationship between two variables. The coefficient ranges from -1 to 1, where:
+
+-   -1 indicates a perfect negative linear relationship
+-   0 indicates no linear relationship
+-   1 indicates a perfect positive linear relationship
+
+Then we will plot a jointplot using one of the custom function from the `mac_functions` module to visualize the relationship and distribution of the two variables.
+
+For the purpose of this particular analysis, we will filter the dataset for flights with delays greater than 15 minutes, the industry standard for defining a delayed flight. This will prevent the distribution from factoring in flights that were not delayed, which account for the majority of the dataset and may skew the results.
+
+```{python}
+df_delayed = df.query('DepDel15 == 1 | ArrDel15 == 1')
+
+jointplot(df_delayed, 'DepDelay', 'ArrDelay', title='Relationship between Departure and Arrival Delays')
+```
+
+The Pearson correlation coefficient between departure and arrival delays is 0.91, which indicates a strong positive linear relationship between the two variables. However, three observations can be made from the scatter plot:
+
+1. There are several datapoints that fall well beyond the linear relationship, such as extreme departure delays with virtually no arrival delays, and vice versa. These cases are likely due to data entry errors.
+2. The distribution shows that flights follow a more linear relationship between departure and arrival delays the more extreme the delays are. Meanwhile, the relationship becomes more dispersed as delays become less extreme, such as within the interquartile range.
+3. The interquartile range for both departure and arrival delays is much smaller than the range of the data, which is expected since most delays fall below 60 minutes. 
+
+Regarding the first observation, the scatterplot shows that extreme cases fall well outside the interquartile range for both departure and arrival delays, and that their count is relatively small. We will confirm this by filtering the dataset for flights with departure delays greater than 500 minutes and arrival delays less than 100 minutes, and vice versa.
+
+```{python}
+boundary_1 = (df_delayed['DepDelay'] >= 500) & (df_delayed['ArrDelay'] <= 100)
+boundary_2 = (df_delayed['DepDelay'] <= 100) & (df_delayed['ArrDelay'] >= 500)
+extreme_df = df_delayed[(boundary_1) | (boundary_2)][['OriginState', 'DestState'] + dep_cols[:3] + arr_cols[:3]]
+
+print(len(extreme_df))
+display(extreme_df)
+```
+
+As expected, the number of extreme cases is extremely small. Given this, we will remove these cases from the dataset and replot the relationship.
+
+```{python}
+df_delayed = df_delayed[~((boundary_1) | (boundary_2))]
+
+jointplot(df_delayed, 'DepDelay', 'ArrDelay', title='Relationship between Departure and Arrival Delays', save='./output/img/delays-correlation.png')
+```
+
+The Pearson correlation coefficient between departure and arrival delays is now 0.93 and the scatterplot shows a cleaner linear relationship between the two variables. However, the majority of the visible data points still fall well beyond the interquartile range. This leads us to our second observation.
+
+The scatterplot shows a strong positive correlation between departure and arrival delays. The distribution, however, shows that flights follow a more linear relationship the more extreme the delays are. Meanwhile, the relationship becomes more dispersed as delays become less extreme, such as within the interquartile range. This suggests that the relationship between departure and arrival delays is not entirely deterministic, and that the correlation may not be as strong as delays approach the interquartile range. These observations lead us to our third observation.
+
+Because the majority of the data points fall within the interquartile range, it might be useful to focus scatterplot on this range to better understand this correlation for the majority of flights. We will filter the dataset for flights within the interquartile range and explore the relationship between departure and arrival delays again.
+
+```{python}
+def filter_outliers(df, col, threshold=1.5):
+    q1, q3 = np.percentile(df[col], [25, 75])
+    iqr = q3 - q1
+    lower_bound = q1 - (threshold * iqr)
+    upper_bound = q3 + (threshold * iqr)
+    return df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+
+df_filtered = filter_outliers(df_delayed, 'DepDelay')
+df_filtered = filter_outliers(df_filtered, 'ArrDelay')
+
+jointplot(df_filtered, 'DepDelay', 'ArrDelay', title='Relationship between Departure and Arrival Delays (Interquartile Range)', save='./output/img/delays-correlation-filtered.png')
+```
+
+The Pearson correlation coefficient within the interquartile range is now 0.67, which indicates a moderate positive linear relationship between the two variables. The wider dispersion of data points in the scatterplot shows a much more volatile relationship between delays within the interquartile range. However, the distribution seems to favor a steeper linear relationship, indicating that arrival delays are more likely to be higher than departure delays within the interquartile range. 
+
+There are two observations that can be made about the spread of the data within the interquartile range. On the one hand, the shallower bound of this spread seems to follow the more general trend of the data. This is to be expected, as arrival delays can only be reduced up a certain point once the departure delay reaches this threshold. On the other hand, the steeper bound of this spread seems to follow a more volatile trend, with arrival delays increasing at a faster rate than departure delays. This is also to be expected, as arrival delays can still occur despite an on-time departure for a range of more frequent reasons, such as air traffic control, weather, or airport congestion.
+
+Below we plot the upper and lower limits to better visualize the slopes:
+```{python}
+ax = sns.scatterplot(x='DepDelay', y='ArrDelay', data=df_filtered, alpha=0.25)
+
+xs1 = np.linspace(0,108,150)
+ys1 = 1.15*xs1 - 45
+ax.plot(xs1, ys1, '-', color='r', linewidth=2.5)
+xs2 = np.linspace(-20,-5,100)
+ys2 = 6.5*xs2 + 120
+ax.plot(xs2, ys2, '-', color='r', linewidth=2.5)
+
+plt.suptitle('Relationship between Departure and Arrival Delays (Interquartile Range, with bounds)', y=0.95)
+plt.savefig('./output/img/delays-correlation-filtered-bounds.png')
+plt.show()
+```
+
+These observations confirm our third observation that the relationship between departure and arrival delays weakens as delays approach the interquartile range.
+
+## Numerical vs. Categorical
+
+In this section, we will explore the relationships between numerical and categorical variables to answer our remaining research questions. We will use various plots to visualize the relationships between pairs of numerical and categorical variables and calculate statistical measures to identify patterns and dependencies between the variables.
+
+### Delays per Airline
+
+We will start by analyzing the relationship between the `DepDel15` and `ArrDel15` variables across the `Airline` column. To do this, we will aggregate the counts of departure and arrival delays by airline.
+
+```{python}
+airline_delays = df.groupby('Airline_Name')[['DepDel15', 'ArrDel15']].sum().reset_index()
+
+sns.barplot(data=airline_delays.sort_values(by='DepDel15', ascending=False), x='Airline_Name', y='DepDel15')
+plt.title('Departure Delays by Airline')
+plt.xlabel('')
+plt.ylabel('Number of Delays at Departure')
+plt.xticks(rotation=45, ha='right')
+plt.show()
+```
+
+```{python}
+sns.barplot(data=airline_delays.sort_values(by='ArrDel15', ascending=False), x='Airline_Name', y='ArrDel15')
+plt.title('Departure Delays by Airline')
+plt.xlabel('')
+plt.ylabel('Number of Delays at Departure')
+plt.xticks(rotation=45, ha='right')
+plt.show()
+```
+
+The bar plots show a similar distribution of departure and arrival delays across airlines, with most airlines occupying similar positions for both types of delays. According to the data, the airline with the highest number of delays across the entire span of the dataset Southwest Airlines, followed by Delta Airlines, American Airlines, and United Airlines.
+
+The number of delays alone, however, is not a fair comparison for measuring on-time performance between airlines, as it does not take into account the total number of flights operated by each airline, nor the number of years of operation. In order to account for this, the number of delays must be normalized by these factors. Given we could not find a dataset with the years of foundation for each airline, we will normalize the counts by the total number of flights operated by each airline.
+
+To achieve this, we will first calculate the total number of flights operated by each airline, and then normalize the counts of delays by this total. We will then plot the normalized counts of delays for each airline.
+
+```{python}
+airline_delays['TotalFlights'] = df['Airline_Name'].value_counts().sort_index().values
+airline_delays['DepDel15_norm'] = airline_delays['DepDel15'] / airline_delays['TotalFlights']
+airline_delays['ArrDel15_norm'] = airline_delays['ArrDel15'] / airline_delays['TotalFlights']
+
+airline_delays.loc[5,'Airline_Name'] = 'America West Airlines'
+airline_delays['Airline_Name'] = airline_delays['Airline_Name'].str.replace(' Inc.', '')
+
+fig, axes = plt.subplots(2, 1, figsize=(14,16))
+
+sns.barplot(data=airline_delays.sort_values(by='DepDel15_norm', ascending=False), x='Airline_Name', y='DepDel15_norm', ax=axes[0])
+axes[0].set_title('Normalized Departure Delays by Airline')
+axes[0].set_xlabel('')
+axes[0].set_ylabel('Proportion of Delays at Departure')
+axes[0].set_xticklabels(airline_delays.sort_values(by='DepDel15_norm', ascending=False)['Airline_Name'], rotation=90, ha='right')
+
+sns.barplot(data=airline_delays.sort_values(by='ArrDel15_norm', ascending=False), x='Airline_Name', y='ArrDel15_norm', ax=axes[1])
+axes[1].set_title('Normalized Arrival Delays by Airline')
+axes[1].set_xlabel('')
+axes[1].set_ylabel('Proportion of Delays at Arrival')
+axes[1].set_xticklabels(airline_delays.sort_values(by='ArrDel15_norm', ascending=False)['Airline_Name'], rotation=90, ha='right')
+plt.tight_layout()
+plt.subplots_adjust(wspace=0.15)
+plt.savefig('./output/img/carrier-delays.png')
+plt.show()
+```
+
+The normalized delay counts shown in the bar plots now provide a more accurate comparison of on-time performance between airlines. According to the data, the airline with the highest proportion of delays at departure is JetBlue Airways, followed by ExpressJet Airlines, Frontier Airlines, Allegiant Air, and Spirit Airlines. On the other hand, the airline with the highest proportion of delays at arrival is Piedmont Airlines, followed Ukraine International Airlines, JetBlue Airways, ExpressJet Airlines, Conair and Frontier Airlines.

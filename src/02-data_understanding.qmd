@@ -1,0 +1,186 @@
+---
+title: Data Understanding
+format: 
+  html:
+    code-fold: true
+jupyter: python3
+execute: 
+  cache: true
+---
+
+## Introduction
+
+Welcome to the second notebook of our EDA project! In this notebook, we will begin our exploration of the airline dataset that we collected in the previous notebook (`01-data_collection.ipynb`).
+
+The main goal of this notebook is to perform data understanding and initial data cleaning tasks. We will import the necessary packages and load the dataset into a `pandas` DataFrame. Then, we will preview the data and select its features, and analyze missing values and duplicates. Finally, we will initially explore unique values from the selected columns before saving our cleaned dataset to an interim parquet file.
+
+Let's get started with the data understanding and preparation process!
+
+## Importing Packages and Data
+
+We will start by importing the necessary packages, such as:
+
+- `pandas`: data manipulation and analysis
+- `matplotlib.pyplot`: data visualization
+- `missingno`: missing data visualization
+
+We will also set the default figure size for our visualizations and default options for displaying the DataFrames, before importing the dataset into a `pandas` DataFrame.
+
+```{python}
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import missingno as msno
+
+from src.modules.analysis import df_overview
+
+figsize = (14,8)
+
+plt.rcParams['figure.figsize'] = figsize
+sns.set(rc={'figure.figsize':figsize})
+
+pd.set_option('display.max_columns', 200)
+
+# df = pd.read_parquet('../data/raw/airline_2m.parquet')
+df = pd.read_parquet('./data/raw/airline_2m.parquet')
+```
+
+## Data Preview
+
+After loading the dataset, we will preview the DataFrame to understand its structure and the type of data it contains. For this, we will use a custom `df_overview` function that returns the DataFrame shape, head and tail preview, and dtype information for each column.
+
+```{python}
+def df_overview(df):
+	print(f"Shape: {df.shape}\n")
+	print(f"Head and tail preview:")
+	display(df)
+	print(f"Df info:")
+	print(df.info(verbose=True), "\n")
+	print("-"*70)
+
+df_overview(df)
+```
+
+### Feature Exploration
+
+We will now explore the features of the dataset and select the ones that are relevant for our analysis. The dataset contains 109 columns. These, however, tend to group into the following categories:
+- Date columns
+- Flight information
+- Origin and destination
+- Departure, taxing, and arrival times
+- Cancellations and diversions
+- Flight summary statistics
+- Delay causes
+- Deviation details
+
+We will save the selected features into lists grouped by these categories and save the variables into a Python script, so we can later import them into our analysis notebooks.
+
+```{python}
+display(df.columns.tolist())
+
+date_cols = ['Year', 'Quarter', 'Month', 'DayofMonth', 'DayOfWeek', 'FlightDate']
+flight_info_cols = ['Reporting_Airline', 'Tail_Number', 'Flight_Number_Reporting_Airline']
+origin_cols = ['OriginAirportID', 'Origin', 'OriginCityName', 'OriginState', 'OriginStateName']
+dest_cols = ['DestAirportID', 'Dest', 'DestCityName', 'DestState', 'DestStateName']
+dep_cols = ['CRSDepTime', 'DepTime', 'DepDelay', 'DepDelayMinutes', 'DepDel15', 'DepartureDelayGroups', 'TaxiOut', 'WheelsOff']
+taxi_cols = ['TaxiOut', 'WheelsOff', 'WheelsOn', 'TaxiIn']
+arr_cols = ['WheelsOn', 'TaxiIn', 'CRSArrTime', 'ArrTime', 'ArrDelay', 'ArrDelayMinutes', 'ArrDel15', 'ArrivalDelayGroups']
+time_cols = ['CRSDepTime', 'DepTime', 'CRSArrTime', 'ArrTime']
+cancel_cols = ['Cancelled', 'CancellationCode', 'Diverted']
+sum_cols = ['CRSElapsedTime', 'ActualElapsedTime', 'AirTime', 'Flights', 'Distance', 'DistanceGroup']
+delay_cols = ['CarrierDelay', 'WeatherDelay', 'NASDelay', 'SecurityDelay', 'LateAircraftDelay']
+dev_cols = ['FirstDepTime', 'TotalAddGTime', 'LongestAddGTime', \
+            'DivAirportLandings', 'DivReachedDest', 'DivActualElapsedTime', 'DivArrDelay', 'DivDistance', \
+            'Div1Airport', 'Div1AirportID', 'Div1WheelsOn', 'Div1TotalGTime', 'Div1LongestGTime', 'Div1WheelsOff', 'Div1TailNum', \
+            'Div2Airport', 'Div2AirportID', 'Div2WheelsOn', 'Div2TotalGTime', 'Div2LongestGTime', 'Div2WheelsOff', 'Div2TailNum', \
+            'Div3Airport', 'Div3AirportID', 'Div3WheelsOn', 'Div3TotalGTime', 'Div3LongestGTime', 'Div3WheelsOff', 'Div3TailNum', \
+            'Div4Airport', 'Div4AirportID', 'Div4WheelsOn', 'Div4TotalGTime', 'Div4LongestGTime', 'Div4WheelsOff', 'Div4TailNum', \
+            'Div5Airport', 'Div5AirportID', 'Div5WheelsOn', 'Div5TotalGTime', 'Div5LongestGTime', 'Div5WheelsOff', 'Div5TailNum']
+```
+
+After saving the selected features, we will filter our DataFrame to include only the list of columns saved above, with the exception of deviation columns, since according to the variable descriptions found in the dataset [documentation](https://www.transtats.bts.gov/Fields.asp?gnoyr_VQ=FGJ), the data is only available from October 2008 (around the last 33% of the available data). Data for delay causes, however, is available from June 2003 (around 50% of the dataset), so we will keep these columns for questions on delay causes in recent years.
+
+By selecting the aforementioned columns, we will reduce the number of columns from 109 to 49. We will then preview the first few rows of the filtered DataFrame to ensure that the columns were correctly selected.
+
+```{python}
+print(f"All columns: {df.shape}")
+
+base_cols = date_cols + flight_info_cols + origin_cols + dest_cols + \
+            dep_cols + arr_cols + cancel_cols + sum_cols + delay_cols
+df = df[base_cols]
+
+print(f"Base columns: {df.shape}")
+display(df.head())
+```
+
+## Missing and Duplicate Values
+
+We will now analyze the missing values and duplicates in the dataset. First we print the summaries for duplicate rows, empty rows and columns, as well as the number and list of columns with empty. We will then use the `missingno` package to visualize the missing data and search for correlations between missing values in different columns. Lastly, we will also check for duplicate rows using the `duplicated` method from `pandas`.
+
+```{python}
+print(f"Number of duplicate rows: {df.duplicated().sum()}")
+print(f"Number of empty rows: {df.isnull().all(axis=1).sum()}")
+print(f"Number of empty columns: {df.isnull().all().sum()}")
+print(f"Number of columns with empty values: {df.isnull().any().sum()}")
+print(df.columns[df.isna().any()])
+```
+
+The bar plot below shows several key findings regarding missing values in the dataset:
+
+- `CancellationCode` has the highest number of missing values, with 99% of the entries missing.
+- `CarrierDelay`, `WeatherDelay`, `NASDelay`, `SecurityDelay` and `LateAircraftDelay` also have a high number of missing values, which is expected given each column explains only a subset flight delays and cancellations.
+- The columns `Tail_Number`, taxi variables, and `AirTime` exhibit around 20% missing values.
+- Columns for departure and arrival times exhibit a minor numer of missing values.
+
+```{python}
+msno.bar(df)
+```
+
+In order to determine the kind of nulity present in the dataset, we will use the `missingno` package to visualize the missing data.
+
+...
+
+```{python}
+msno.heatmap(df)
+```
+
+## Unique Values
+
+Finally, we will explore the unique values from the selected columns. We will print data shape again for reference and visualize the number of unique values for each column using a countplot. This will help us understand the cardinality of the categorical columns and the density of unique values in the dataset.
+
+```{python}
+print(df.shape)
+ax = df.nunique().sort_values(ascending=False).plot(kind='bar')
+ax.bar_label(ax.containers[0], rotation=45)
+plt.show()
+```
+
+The countplot above shows that most of the columns have a low number of unique values, with the exception of the `Tail_Number`, `Flight_Number` columns, which are flight identifiers. Other columns have a low number of unique values, which is expected for categorical variables such as state columns, `Reporting_Airline`, group columns, and date columns, as these consist of only a discrete set of possible values. Columns with the smallest unique values should be those for binary variables such as `Cancelled`, `Diverted` and 15-minute delay columns.
+
+These is, however, one column consisting of a single unique value, which is the `Flights` column. Below we print the value counts for this column to confirm that all entries are equal to 1. Consequently, the column will not be useful for our analysis and can be dropped.
+
+```{python}
+print(df['Flights'].value_counts())
+```
+
+```{python}
+df = df.drop(columns="Flights")
+sum_cols.remove("Flights")
+print(df.shape)
+```
+
+## Exporting Dataset
+
+We will now save the cleaned dataset to an interim parquet file. This will allow us to load the cleaned dataset in the next notebook and continue with the data preparation process. We will also save the selected feature groups to a Python script for later use in our analysis notebooks.
+
+```{python}
+df.to_parquet('./data/interim/02-airline_2m.parquet', index=False)
+```
+
+```{python}
+variables = {name: value for name, value in locals().items() if name.endswith('_cols')}
+
+with open('./src/modules/variables_02.py', 'w') as f:
+    for name, value in variables.items():
+        f.write(f"{name} = {value}\n")
+```

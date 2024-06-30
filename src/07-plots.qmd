@@ -1,0 +1,163 @@
+---
+title: Plots for Bivariate Analysis
+format: 
+  html: default
+jupyter: python3
+execute: 
+  cache: true
+---
+
+## Import Packages
+
+```{python}
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+from plotly.subplots import make_subplots
+
+from src.modules.variables_04 import *
+
+figsize = (14,8)
+plt.rcParams['figure.figsize'] = figsize
+plt.rc('font', size=16)
+sns.set_style("darkgrid")
+pd.set_option('display.max_columns', 200)
+pd.options.display.float_format = '{:,.3f}'.format
+
+df = pd.read_parquet('./data/interim/04-airline_2m.parquet')
+```
+
+## Quick Clean
+
+```{python}
+foreign_airlines = ['Ukraine International Airlines', 'ATA Airlines d/b/a ATA']
+
+print(len(df))
+df = df.query("~Airline_Name.isin(@foreign_airlines)")
+print(df)
+```
+
+## Delays ~ Time
+
+```{python}
+#| code-fold: true
+df['FlightMonthYear'] = df['FlightDate'].astype('datetime64[ns]')
+df_time = df.groupby(pd.Grouper(key='FlightMonthYear', freq='ME'))[['DepDel15', 'ArrDel15']].agg(['sum', 'mean'])
+
+df_time.columns = ['_'.join(col) for col in df_time.columns.values]
+df_time = df_time.reset_index()
+df_time['FlightMonthYearOrdinal'] = df_time['FlightMonthYear'].map(pd.Timestamp.toordinal)
+```
+
+```{python}
+#| fig-column: page-right
+fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+
+for col in ['DepDel15_mean', 'ArrDel15_mean']:
+    sns.lineplot(x='FlightMonthYear', y=col, data=df_time, ax=axes[0], label=col)
+    sns.regplot(x='FlightMonthYearOrdinal', y=col, data=df_time, ax=axes[1], label=col)
+
+label_freq = 48
+xticks = df_time['FlightMonthYearOrdinal'][3::label_freq]
+xticklabels = df_time['FlightMonthYear'][3::label_freq].dt.year
+
+axes[1].set_xticks(xticks)
+axes[1].set_xticklabels(xticklabels)
+
+for ax in axes:
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Number of Delays')
+    ax.legend()
+
+# for year in df_time['FlightMonthYear'].dt.year.unique():
+#     axes[0].axvline(x=pd.to_datetime(str(year)), color='grey', linestyle='--', linewidth=0.5)
+
+fig.suptitle('Analysis of Flight Delays Over Time')
+axes[0].set_title('Monthly Trends')
+axes[1].set_title('Regression Analysis')
+
+plt.tight_layout()
+plt.savefig('./output/img/evolution-mean-delays.png', bbox_inches='tight')
+# plt.show()
+```
+
+## Correlation
+
+```{python}
+df_delayed = df.query('DepDel15 == 1 | ArrDel15 == 1')
+boundary_1 = (df_delayed['DepDelay'] >= 500) & (df_delayed['ArrDelay'] <= 100)
+boundary_2 = (df_delayed['DepDelay'] <= 100) & (df_delayed['ArrDelay'] >= 500)
+df_delayed = df_delayed[~((boundary_1) | (boundary_2))]
+
+jointplot(df_delayed, 'DepDelay', 'ArrDelay', title='Departure vs Arrival Delays', save='./output/img/delays-correlation.png')
+```
+
+```{python}
+def filter_outliers(df, col, threshold=1.5):
+    q1, q3 = np.percentile(df[col], [25, 75])
+    iqr = q3 - q1
+    lower_bound = q1 - (threshold * iqr)
+    upper_bound = q3 + (threshold * iqr)
+    return df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+
+df_filtered = filter_outliers(df_delayed, 'DepDelay')
+df_filtered = filter_outliers(df_filtered, 'ArrDelay')
+
+jointplot(df_filtered, 'DepDelay', 'ArrDelay', title='Departure vs Arrival Delays (interquartile range)', save='./output/img/delays-correlation-filtered.png')
+```
+
+```{python}
+ax = sns.scatterplot(x='DepDelay', y='ArrDelay', data=df_filtered, alpha=0.25)
+
+xs1 = np.linspace(0,108,150)
+ys1 = 1.15*xs1 - 45
+ax.plot(xs1, ys1, '-', color='r', linewidth=2.5)
+xs2 = np.linspace(-20,-5,100)
+ys2 = 6.5*xs2 + 120
+ax.plot(xs2, ys2, '-', color='r', linewidth=2.5)
+
+plt.suptitle('Departure vs Arrival Delays (interquartile range, with bounds)', y=0.95)
+plt.tight_layout()
+plt.savefig('./output/img/delays-correlation-filtered-bounds.png', bbox_inches='tight')
+# plt.show()
+```
+
+## Delays ~ Airline
+
+```{python}
+import matplotlib.ticker as mtick
+
+airline_delays = df.groupby('Airline_Name')[['DepDel15', 'ArrDel15']].sum().reset_index()
+
+airline_delays['TotalFlights'] = df['Airline_Name'].value_counts().sort_index().values
+airline_delays['DepDel15_norm'] = airline_delays['DepDel15'] / airline_delays['TotalFlights']
+airline_delays['ArrDel15_norm'] = airline_delays['ArrDel15'] / airline_delays['TotalFlights']
+
+airline_delays.loc[4,'Airline_Name'] = 'America West Airlines'
+airline_delays['Airline_Name'] = airline_delays['Airline_Name'].str.replace(' Inc.', '')
+
+fig, axes = plt.subplots(2, 1, figsize=(14,14))
+
+sns.barplot(data=airline_delays.sort_values(by='DepDel15_norm', ascending=False), x='Airline_Name', y='DepDel15_norm', ax=axes[0])
+axes[0].set_title('Departure Delays')
+axes[0].set_xlabel('')
+axes[0].set_ylabel('')
+axes[0].set_xticklabels(airline_delays.sort_values(by='DepDel15_norm', ascending=False)['Airline_Name'], rotation=90, ha='right')
+axes[0].set_ylim([0,0.28])
+axes[0].yaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=0))
+
+sns.barplot(data=airline_delays.sort_values(by='ArrDel15_norm', ascending=False), x='Airline_Name', y='ArrDel15_norm', ax=axes[1])
+axes[1].set_title('Arrival Delays')
+axes[1].set_xlabel('')
+axes[1].set_ylabel('')
+axes[1].set_xticklabels(airline_delays.sort_values(by='ArrDel15_norm', ascending=False)['Airline_Name'], rotation=90, ha='right')
+axes[1].yaxis.set_major_formatter(mtick.PercentFormatter(1.0, decimals=0))
+
+plt.suptitle('Normalized Delays by Carrier')
+plt.tight_layout()
+plt.subplots_adjust(wspace=0.15)
+plt.savefig('./output/img/carrier-delays.png')
+# plt.show()
+```

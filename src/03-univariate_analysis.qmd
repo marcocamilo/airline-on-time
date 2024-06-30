@@ -1,0 +1,494 @@
+---
+title: Univariate Analysis
+format: 
+  html:
+    code-fold: true
+jupyter: python3
+execute: 
+  cache: true
+---
+
+## Introduction
+
+Welcome to the third notebook of our project! In this notebook, we will focus on a univariate exploratory analysis of the data from the US Bureau of Transportation. This data was collected in `01-data_collection.ipynb` and prepared in `02-data_understanding.ipynb`. We will perform various data exploration tasks to gain insights into the features of this dataset.
+
+The main goal of this notebook is to understand the distribution and characteristics of individual variables in the dataset by means of a univariate analysis. This type of analysis helps us understand the nature of the each variable and identify any potential issues or patterns that may require further cleaning.
+
+In this notebook, we organize the analysis by variable groups as defined in `02-data_understanding.ipynb`, interleaving univariate analysis with data cleaning and wrangling. We examine the distribution, spread, and missing values of each variable to identify patterns and potential issues that may require further processing. Correspondingly, we perform necessary data cleaning and wrangling tasks to prepare the data for further analysis.
+
+Using visualizations and summary statistics, we explore the dataset to uncover meaningful patterns and relationships. By the end of this notebook, we will have a better understanding of each variable in the dataset and be ready to move on to more advanced analysis, such as bivariate analysis and data modeling.
+
+## Importing Packages and Data
+
+We will start by importing the necessary packages and the dataset we prepared in the previous notebook. These include:
+
+- `pandas`: data manipulation and analysis
+- `numpy`: optimizing vector and matrix operations
+- `matplotlib.pyplot` and `seaborn`: data visualization
+- `GridSpec`: customizing subplots
+- `sys`: system-specific parameters
+
+In addition to these packages, we have created two custom modules:
+
+- `variables`: contains variable groups
+- `custom_functions`: imports custom data anlaysis functions
+
+As in the previous notebook, we will also set the the default figure size for our visualizations and default options for displaying the DataFrames. In addition, we will set the default float format to 2 decimal places for better readability. Finally, we will load the `Parquet` file into a pandas DataFrame.
+
+```{python}
+#| code-fold: false
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+import seaborn as sns
+import missingno as msno
+
+from src.modules.analysis import univariate_preview
+from src.modules.variables_02 import *
+
+figsize = (14,8)
+
+plt.rcParams['figure.figsize'] = figsize
+sns.set(rc={'figure.figsize':figsize})
+sns.set_palette("husl", 8)
+pd.set_option('display.max_columns', 200)
+pd.options.display.float_format = '{:,.3f}'.format
+
+df = pd.read_parquet('./data/interim/02-airline_2m.parquet')
+```
+
+## Date Variables
+
+We will start by analyzing the distribution and spread of date variables. These include the `Year`, `Quarter`, `Month`, and `DayOfWeek` variables. We leave the `FlightDate` column out for the moment, until we have converted it to the appropriate data type. We will also identify any potential issues that may require further processing.
+
+### Value Counts and Spread
+
+```{python}
+univariate_preview(df, date_cols[:-1])
+```
+
+The value counts and summary statistics above shows several insights about the date variables in the dataset, the simplest of which is the lack of missing values, which simplifies the data cleaning process.
+
+Firstly, the value counts for the `Year` variable show the feature spans 34 years, with the more recent years being more frequent. This indicates an increase in flights over time, consistent with the growth of the airline industry. The summary statistics confirm this growth, showing that, with data spreading from 1987 to 2020 and a median of 2005, the first half of the dataset covers a wider span (18 years) than the second half (15 years). This pattern of growth also reflected at the quartile level (1Q = 10 years, 2Q = 8 years, 3Q = 7 years, 4Q = 8 years). This suggests that the airline industry has expanded over the years.
+
+Moreover, the other date variables such as `Quarter`, `Month`, and `DayOfWeek` show relatively even distributions across their respective categories. This indicates that the data is well spread across the variables with no apparent issues. This is further demonstrated the relatively close mean and median values for these variables, indicating a balanced distribution.
+
+In addition to this, the preview shows that the `FlightDate` variable is saved as a string, which is not ideal for date operations. This will require some processing to convert it to a `datetime` object.
+
+To better visualize the spread of the data, below we create count plots for each date variable.
+
+```{python}
+fig = plt.figure(constrained_layout=True)
+gs = GridSpec(2, 3, figure=fig)
+ax1 = fig.add_subplot(gs[0, :])
+ax2 = fig.add_subplot(gs[1, 0])
+ax3 = fig.add_subplot(gs[1, 1])
+ax4 = fig.add_subplot(gs[1, 2])
+
+columns = date_cols
+axes = [ax1, ax2, ax3, ax4]
+
+for col, ax in zip(columns, axes):
+    sns.countplot(data = df, x = col, ax=ax, palette='husl')
+    ax.set_title(f"{col} Counts")
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.tick_params(axis='x', rotation=45)
+
+
+plt.show()
+fig.savefig('./output/img/date_cols.png')
+```
+
+An additional observation may be made from the count plots. The count plot for `Year` show the years 1987 and 2020 having markedly fewer flights than the other years. This is likely due to those years containing only a single quarter: the last quarter of 1987 and the first quarter of 2020. Below we test this hypothesis by creating a cross-tabulation of the `Year` and `Quarter` variables.
+
+```{python}
+df_1987_2020 = df.query("Year == 1987 | Year == 2020")
+q_1987_2020 = pd.crosstab(df_1987_2020['Year'], df_1987_2020['Quarter'])
+display(q_1987_2020)
+```
+
+The cross-tabulation confirms that the years 1987 and 2020 only contain data from the last and first quarters, respectively.
+
+### Data Wrangling: FlightDate to `datetime64[ns]`
+
+As mentioned above, the `FlightDate` variable must be converted to a datetime object, which will allow us to perform date operations and visualizations.
+
+```{python}
+df['FlightDate'] = df['FlightDate'].astype('datetime64[ns]')
+
+print(f"Minimal date: {df['FlightDate'].dt.date.min()}")
+print(f"Maximal date: {df['FlightDate'].dt.date.max()}")
+```
+
+## Flight Info Variables
+
+The next variable group we will analyze is the flight information variables, which include `Reporting_Airline`, `Tail_Number`, `Flight_Number_Reporting_Airline`. We will analyze the distribution of these categorical variables, and determine any potential issues that may require further processing. Given these are categorical variables, we will just use value counts, thus setting the `describe` parameter of our `univariate_preview` function to `False`.
+
+### Value Counts
+
+```{python}
+univariate_preview(df, flight_info_cols, describe=False)
+```
+
+The value counts above show the following insights about the flight information variables. Firstly, `Reporting_Airline` contains data for 33 airlines, with the most frequent being WN, DL, and AA. Furthermore, the `Tail_Number` variable contains missing values for almost 20% of the data. This is a significant amount for which we will need to decide how to handle them according to our questions.
+
+There are two minor issues among flight information variables. One is that the `Reporting_Airline` variable is saved as the airline code, which is not very informative. We will need to convert these codes to the full airline names to make the data more readable. For this, we will use the `airlines.csv` dataset, which contains a list of all airline codes and their corresponding names.
+
+The other issue is that `Flight_Number_Reporting_Airline` merely consists of numbers that may overlap among airlines. This is not very informative and could lead to ambiguity. One alternative is to combine this variable with `Reporting_Airline` to create a unique flight identifier. This could allow us to identify flights more easily and reduce ambiguity.
+
+We will tackle these issues in the following sections.
+
+### Feature Engineering: Airline Names
+
+To use the `airlines.csv` dataset, we will map its content to the `Reporting_Airline` variable in the main dataset. This will allow us to replace the airline codes with the full airline names, making the data more readable and informative.
+
+We will start by loading the `airlines.csv` dataset, setting the index to the `Code` variable. Then, we will create a new `Airline_Name` column right after the `Reporting_Airline` column in the main dataset, which would be in the 7th column, and add it to our flight information columns list. Finally, we will use `pandas` `map()` function to replace the airline codes in the main dataset with the corresponding airline names. We will then preview the first few rows of the dataset to confirm the changes.
+
+```{python}
+airlines = pd.read_csv('./data/external/airlines.csv').set_index('Code')['Description']
+df.insert(7, column='Airline_Name', value="")
+flight_info_cols = ['Reporting_Airline', 'Airline_Name', 'Tail_Number', 'Flight_Number_Reporting_Airline']
+df['Airline_Name'] = df['Reporting_Airline'].map(airlines)
+
+df[flight_info_cols].head()
+```
+
+### Feature Engineering: Unique Flight Identifier
+
+In order to create a more accurate identifier for each flight, we will combine the `Reporting_Airline` and `Flight_Number_Reporting_Airline` variables into a new variable called `Flight_Id`. This might help us identify flights more easily and reduce ambiguity.
+
+This process merely involves concatenating the two variables, so we will use the `+` operator to do so and set the data type to `string`. The resulting variable will be added to the dataset next to the `Flight_Number_Reporting_Airline` variable, which corresponds to the 10th column index. Below is the preview of the first few rows of the dataset to confirm the changes.
+
+```{python}
+flight_ids = df['Reporting_Airline'] + df['Flight_Number_Reporting_Airline'].astype('str')
+df.insert(10, column="Flight_Id", value=flight_ids)
+flight_info_cols.append("Flight_Id")
+df[flight_info_cols].head()
+```
+
+### Value Counts (updated)
+
+With the `Airline_Name` and `Flight_Id` variables added to the dataset, we can now analyze the distribution of the `Reporting_Airline` variable with an informative label, as well as explore if the unique flight identifiers prove to accurately identify unique flights.
+
+```{python}
+univariate_preview(df, flight_info_cols, describe=False)
+
+n_airlines = df['Airline_Name'].value_counts(normalize=True).reset_index().sort_values(by='proportion', ascending=False)
+sns.barplot(data=n_airlines, x='Airline_Name', y='proportion')
+plt.title("Carrier Count")
+plt.savefig('./output/img/carrier-count.png', bbox_inches='tight')
+plt.show()
+```
+
+The value counts from the `Airline_Name` column show more clearly now that Southwest Airlines (WN) is the most frequent airline in the dataset, followed by Delta Air Lines (DL) and American Airlines (AA). To better visualize the value counts, we will create a count plot for the flight information variables.
+
+```{python}
+flight_info_unique= df[flight_info_cols].nunique().sort_values(ascending=False)
+ax = sns.barplot(x=flight_info_unique.index, y=flight_info_unique.values)
+ax.bar_label(ax.containers[0])
+plt.xticks(rotation=90)
+plt.title("Flight Info Value Counts")
+plt.show()
+```
+
+Unfortunately, the unique flight identifiers are not as unique as we expected. This stems from the fact that the value counts show that there are only 62,831 unique flight identifiers or 3.14% of values accounting for 2 million flights in the dataset. This points to a high repetition density in this column, which might be due to code-sharing among different routes. To assess this, we will explore as an example the routes for the most frequent unique flight identifier in the dataset.
+
+```{python}
+most_freq_flight_id = df['Flight_Id'].value_counts().idxmax()
+df_top_flight_id = df.query("Flight_Id == @most_freq_flight_id")
+
+print(f"Total Flights with AS65: {len(df_top_flight_id)}")
+print(f"Unique airlines: {df_top_flight_id['Reporting_Airline'].nunique()}\n")
+display(df_top_flight_id[['Origin', 'Dest']].value_counts(normalize=True))
+```
+
+As suspected, unique flight identifiers appear for multiple flight routes. The output above shows that the most frequent flight identifier, AS65, is shared among 7 different routes of the same airline. Contrary to our initial intention, our feature is not identifying unique flights. An alternative method to identify unique flights would be to reference the unique flight identifier and its route, however, for the purposes of this analysis, we will not pursue this further unless later necessary.
+
+## Origin and Destination Variables
+
+We will now continue our analysis with the origin and destination variables, which include `Origin`, `OriginCityName`, `OriginState`, `Dest`, `DestCityName`, and `DestState`. Again, as categorical variables, we will set the `describe` parameter of our `univariate_preview` function to `False` and use just value counts.
+
+### Value Counts
+
+```{python}
+univariate_preview(df, origin_cols + dest_cols, describe=False)
+
+ax = df[origin_cols+dest_cols].nunique().plot(kind='bar')
+ax.bar_label(ax.containers[0])
+plt.title("Origin and Dest Value Counts")
+plt.show()
+```
+
+The value counts above reveal some disparities between some pairs of features and various insights about the origin and destination information documented in the dataset.
+
+Firstly, the `OriginAirportID` and `DestAirportID` variables encode the *US DOT identification number* per airport—which is a numeric ID—, while the `Origin` and `Dest` variables encode the corresponding *IATA* codes—an alphabetic ID. However, the former pair of variables each exhibits an additional numeric ID. This may be due to one airport having two numeric identifiers instead of one. We will explore this further by creating a cross-tabulation of the concerned variables.
+
+Additionally, the state and state name variables in both origin and destination groups exhibit the same unique values, while also almost the same, low number of missing values. The missing values might be occuring systematically, thus we will explore this shortly to decide how to handle them.
+
+Furthermore, there seems to be a slight disparity between the number of airports and the number of cities in the origin and destination variables. We will need to further explore this to determine if the disparity is due to cities with multiple airports or airports with multiple city names.
+
+In the following sections, we will now address each of these issues.
+
+### Difference in DOT and IATA codes
+
+We will explore the discrepancy between the DOT and IATA codes by creating a `airport_multid_counts` function, which takes the list of column names as input, and outputs two dataframes: the airports with more than only DOT ID and the normalized frequency of each identifier for the airport with most DOT IDs.
+
+```{python}
+def airport_multid_counts(cols):
+    count = df.groupby(cols[0])[cols[1]].nunique()
+    display(count[count > 1].reset_index())
+    top_airport = count.idxmax()
+    display(df.query(f"{cols[0]} == @top_airport")[cols[1]]\
+        .value_counts(normalize=True).reset_index())
+
+airport_multid_counts(['Origin', 'OriginAirportID'])
+airport_multid_counts(['Dest', 'DestAirportID'])
+```
+
+As suspected, there is exactly one airport with two IATA codes, which is AUS. In addition, the two IATA codes are the same in both origin and destination variables. Since this is the only case of this nature, we will not pursue this further and instead use the `Origin` and `Dest` variables for our analysis.
+
+### Missing State and State Names
+
+In order to determine if the missing values in the state and state name variables occur systematically, we will check if the missing values occur in the same rows for both origin and destination variables.
+
+```{python}
+missing_origin_state = df.query("OriginState.isna()").index
+missing_origin_state_name = df.query("OriginStateName.isna()").index
+print(f"Same nan values in origin state variables: {missing_origin_state.equals(missing_origin_state_name)}")
+
+missing_dest_state = df.query("DestState.isna()").index
+missing_dest_state_name = df.query("DestStateName.isna()").index
+print(f"Same nan values in origin state variables: {missing_dest_state.equals(missing_dest_state_name)}")
+```
+
+Given the missing values occur in the same rows for both pairs of state and state name variables, we will see if their value can be inferred from the city names. To do this, we will filter the dataset for rows with missing state and state name values and previewing the unique city names.
+
+```{python}
+print(df.query("OriginState.isna()")['OriginCityName'].unique())
+print(df.query("DestState.isna()")['DestCityName'].unique())
+```
+
+Interestingly, all missing values correspond to origin or destination airports of US territories, such as Puerto Rico and the US Virgin Islands. This suggest that the missing values are not due to data entry errors, but rather due to the fact that these territories are not part of the 50 US states. This isn't, however, useful for our analysis, so we will fill the missing values with their abbreviations and names.
+
+#### Data Cleaning: Filling Missing State and State Names
+
+We will create a dictionary that maps the concerned city names to a list containing the corresponding state abbreviation and state name. We will then create functions that will look up the corresponding city names in the dictionary and fill in the missing values.
+
+```{python}
+city_states_dict = {
+    'San Juan, Puerto Rico' : ['PR', 'Puerto Rico'],
+    'Saipan, Northern Mariana Islands' : ['MP', 'Northern Mariana Islands'],
+    'Guam, Guam' : ['GU', 'Guam'],
+    'Charlotte Amalie, Virgin Islands' : ['VI', 'U.S. Virgin Islands'],
+    'Christiansted, Virgin Islands' : ['VI', 'U.S. Virgin Islands'],
+    'Koror, Palau District (TTPI)': ['TT', 'U.S. Pacific Trust Territories and Possessions'],
+    'Yap, Federated States of Micronesia' : ['FM', 'Federated States of Micronesia']
+}
+
+def get_state(x):
+    state = city_states_dict.get(x, [None, None])[0]
+    return state
+
+def get_state_name(x):
+    state_name = city_states_dict.get(x, [None, None])[1]
+    return state_name
+
+df['OriginState'] = df['OriginState'].combine_first(df['OriginCityName'].map(get_state))
+df['OriginStateName'] = df['OriginStateName'].combine_first(df['OriginCityName'].map(get_state_name))
+df['DestState'] = df['DestState'].combine_first(df['DestCityName'].map(get_state))
+df['DestStateName'] = df['DestStateName'].combine_first(df['DestCityName'].map(get_state_name))
+
+```
+
+We then preview the first few rows of the dataset to verify the changes and recalculate the missing counts, to confirm if all missing values (0.03%) were filled.
+
+```{python}
+state_abb = [v[0] for v in city_states_dict.values()]
+display(df[(df['OriginState'].isin(state_abb)) | (df['DestState'].isin(state_abb))][origin_cols + dest_cols].head())
+display(df[origin_cols + dest_cols].isna().sum())
+```
+
+### Difference in Airport and City Names
+
+The last observation we made concern the slight disparity between the number of airports and the number of cities in the origin and destination variables. To determine if the disparity is due to cities with multiple airports or airports with multiple city names, we will create a function that aggregates both unique airports and city names by each other for origin and destination variables.
+
+```{python}
+def city_airports_aggregation(df, cols):
+    city_airport = df.groupby(cols[0])[cols[1]].unique().reset_index()
+    city_airport = city_airport[city_airport[cols[1]].apply(lambda x: len(x) > 1)]
+    city_airport["count"] = city_airport[cols[1]].apply(len)
+    city_airport = city_airport.sort_values("count", ascending=False)
+    
+    airport_city = df.groupby(cols[1])[cols[0]].unique().reset_index()
+    airport_city = airport_city[airport_city[cols[0]].apply(lambda x: len(x) > 1)]
+    airport_city["count"] = airport_city[cols[0]].apply(len)
+    airport_city = airport_city.sort_values("count", ascending=False)
+    
+    return city_airport, airport_city
+
+origin_city_airport, origin_airport_city = city_airports_aggregation(df, ['OriginCityName', 'Origin'])
+dest_city_airport, dest_airport_city = city_airports_aggregation(df, ['DestCityName', 'Dest'])
+
+display(origin_city_airport)
+display(origin_airport_city)
+display(dest_city_airport)
+display(dest_airport_city)
+```
+
+The aggregated tables reveal some interesting insights about the airport and city names in the dataset. Firstly, the first and third tables show there are multiple airports for some origin and destination cities, which is not uncommon in the airline industry, but confirms one of our initial assertions on the airport-to-city counts.
+
+The second and fourth tables, however, reveal an important issue: some airports appear with multiple city names. Upon further inspection, the unique names all refer to the same location. This will require some standardization for city names in the dataset.
+
+#### Data Cleaning: Standardizing City Names
+
+First, we will create a dictionary that maps the airport codes the list of city names aggregated in the tables above. For each airport key, we will then update its value by selecting the index with the correct city name. This will result in a standardized dictionary that we will use to replace the city names in the main dataset.
+
+```{python}
+airport_city_dict = dict(zip(origin_airport_city['Origin'], origin_airport_city['OriginCityName'].apply(list)))
+indexes = [0, 0, 0, 1, 0, 0, 1]
+airport_city_dict = {key: value[index] for key, (value, index) in 
+                     zip(airport_city_dict.keys(), zip(airport_city_dict.values(), indexes))}
+airport_city_dict
+```
+
+The cleaned dictionary will then be used to replace the city names in the main dataset. We then rerun the aggregations to confirm there are no airports with multiple city names.
+
+```{python}
+df['OriginCityName'] = df['Origin'].map(airport_city_dict).combine_first(df['OriginCityName'])
+df['DestCityName'] = df['Dest'].map(airport_city_dict).combine_first(df['DestCityName'])
+
+display(city_airports_aggregation(df, ['OriginCityName', 'Origin'])[1])
+display(city_airports_aggregation(df, ['DestCityName', 'Dest'])[1])
+```
+
+### State Counts
+
+With the missing values filled and the city names standardized, we can now analyze the distribution of the state variables in the dataset. To accomplish this, we create a `state_counter` function, which generates bar plot with the value counts and an overlayed line plot visualizing the cumulative sum. The threshold for the cumulative sum is set at 80% to highlight what proportion of airports account for 80% of the data. We apply this visualization function for both the 'OriginState' and 'DestState' columns.
+
+```{python}
+def state_counter(column, ax, threshold=0.8):
+    state_counts = df[column].value_counts().sort_values(ascending=False)
+    cumulative_sum = state_counts.cumsum() / state_counts.sum()
+
+    # Plot the bar chart without y ticks
+    state_counts.plot(kind='bar', ax=ax)
+    ax.set_title(column)
+    ax.set_xlabel(column)
+    ax.set_ylabel('Value Counts')
+    ax.set_xticklabels(state_counts.index, rotation=90)
+    ax.grid(False)
+    
+    # Plot the cumulative sum line
+    ax2 = ax.twinx()
+    ax2.plot(state_counts.index, cumulative_sum.values, color='red', marker='o')
+    ax2.set_ylabel('Cumulative Sum')
+    ax2.set_yticks(np.arange(0, 1.1, 0.2))
+    ax2.set_yticklabels(['{:.0%}'.format(x) for x in np.arange(0, 1.1, 0.2)])
+    
+    # Mark the 80% line
+    ax2.axhline(threshold, color='grey', linestyle='--')
+    ax.axvline(cumulative_sum[cumulative_sum < threshold].idxmax(), color='grey', linestyle='--')
+
+
+print(f"Total States and Territories: {df['OriginState'].nunique()}")
+fig, axes = plt.subplots(nrows=2, ncols=1)
+fig.subplots_adjust(hspace=0.2)
+state_counter('OriginState', axes[0])
+state_counter('DestState', axes[1])
+
+plt.savefig('./output/img/state-count.png')
+plt.tight_layout()
+plt.show()
+```
+
+The count plots show that the states with the most flights include California (CA), Texas (TX), Florida (FL), Illinois (IL), Georgia (GA), and New York (NY). This is unsurprising, as these states have some of the busiest airports in the country. Correspondingly, the cumulative sum line plots show that almost 80% of the flights are accounted for by the top 32% (18) of the states and territories. The state rankings for number of flights are almost identical between the `OriginState` and `DestState` variables, with the exception of some pairs of states, which directly compete for rankings as origin and destination states. These include Washington (WA) and Ohio (OH), South Carolina (SC) and Minnesota (MN), and Rhode Island (RI) and Idaho (ID).
+
+## Departure and Arrival Variables
+
+We will now analyze the distribution of the departure and arrival variables, which include `CRSDepTime`, `DepTime`, `DepDelay`, `DepDelayMinutes`, `DepDel15`, `DepartureDelayGroups`, `TaxiOut`, `WheelsOff`, `WheelsOn`, `TaxiIn`, `CRSArrTime`, `ArrTime`, `ArrDelay`, `ArrDelayMinutes`, `ArrDel15`, and `ArrivalDelayGroups`. We will analyze the distribution of these variables and determine any potential issues that may require further processing. Given these variables have a high density of information, we will focus first on the values counts analysis and deal with any data cleaning and wrangling tasks before carrying out the statistical analysis.
+
+### Value Counts
+
+```{python}
+univariate_preview(df, dep_cols + arr_cols, describe=False)
+```
+
+The value counts and summary statistics above show several insights about the departure and arrival variables in the dataset. We will discuss them in the parragaphs below.
+
+Firstly, all variables are saved as either integers or floats. Both numerical variables measuring duration and boolean variables would benefit from being saved as integers to allow for more efficient operations and memory usage. However, the variables measuring time are saved as integers in HHMM format, which is not ideal for time operations, given every number ending between 60 and 99 will be missing. This will require some processing to convert them to a `datetime` object.
+
+Moreover, the unique value counts tend to group around five kinds of variables: *time variables* have unique value counts in the thousdans, *delay variables* have counts in the high hundreds, *taxi variables* have counts in the two hundreds, and categorical variables have low counts, such as delay groups at 15 and 15-minute delay as binary variables.
+
+Interestingly, the missing value counts seem to also display marked groupings, which may hint to some kind of correlation with another variable. This will be further explore in upcoming sections.
+
+While the top value counts, as well as the summary statistics, show some interesting preliminary distributions in the data, they also reveal some preliminary data cleaning tasks that need to be tackled, such as redundant midnight values (0 and 2400) in CRS variables, midnight time format not supported by `datetime` (i.e. 2400), and unusually large positive and negative delay values. Considering the necessity for data cleaning and the varying degrees of missing values, it is definitely best to analyze these statistics after dealing with the missing values.
+
+We will now direct our attention to the groupings of missing values and see if there is any regularity.
+
+### Exploring Missing Value Correlation
+
+To better visualize the groupings of missing value counts, below is a bar plot illustrating the number of non-na values per column.
+
+```{python}
+msno.bar(df[dep_cols + arr_cols])
+plt.show()
+```
+
+The bar plot shows that the amount of missing value are the same for two groups of variables: the delay/arrival variables with around 2% values missing, and the taxi variables with around 20%. One possible reason for the grouped missing value counts is due to an existing correlation with another variable, namely due to the absence of the flights themselves. This can only be possible if the missing values correlate with the `Cancelled` and `Diverted` variables.
+
+To test this hypothesis, below we first compare the value counts for the `Cancelled` and `Diverted` variables with the missing value counts for the depature and arrival variables.
+
+```{python}
+display(df[dep_cols + arr_cols].isna().mean()*100)
+display(df[['Cancelled', 'Diverted']].value_counts(normalize=True)*100)
+```
+
+The value counts show that positive `Cancelled` values occur almost 2% of the time, while positive `Diverted` values occur less than 0.1% of the time. The number of positive `Cancelled` values (and even added to the positive `Diverted` values) is almost equal to the number of missing values in the delay/arrival variables. This suggests that the missing values in the delay/arrival variables are due to the absence of the flights themselves.
+
+In light of the value counts above, two groups of variables may be dropped: the taxi variables and the `Cancelled` and `Diverted` variables. Since our goal is to develop a model that predicts flight delays, the former group is highly missing and the latter group only affects 2% of the data, to small to be useful for our analysis.
+
+### Data Cleaning: Dropping Taxi, Cancelled, and Diverted Variables
+
+We will now drop the rows with positive `Cancelled` and `Diverted` values, as well as the columns themselves.
+```{python}
+print(f"Before flight drop: {df.shape}")
+df = df.query("Cancelled == 0 & Diverted == 0")
+print(f"After flight drop: {df.shape}")
+
+df = df.drop(columns=cancel_cols)
+print(f"Columns droped! New shape: {df.shape}")
+```
+
+Next, we will drop the taxi variables, since they exhibit a large amount of missing variables. We will also drop the corresponding column names from the `dep_cols` and `arr_cols` lists.
+
+```{python}
+taxi_cols = ['TaxiOut', 'WheelsOff', 'WheelsOn', 'TaxiIn']
+
+df = df.drop(columns=taxi_cols)
+print("Taxi columns dropped!")
+
+dep_cols = [i for i in dep_cols if i not in taxi_cols]
+arr_cols = [i for i in arr_cols if i not in taxi_cols]
+
+df[dep_cols + arr_cols].head()
+```
+
+## Conclusion
+
+### Takeaways
+
+### Exporting Dataset and Variables
+
+```{python}
+df.to_parquet('./data/interim/03-airline_2m.parquet', index=False)
+```
+
+```{python}
+variables = {name: value for name, value in locals().items() if name.endswith('_cols')}
+
+with open('./src/modules/variables_03.py', 'w') as f:
+    for name, value in variables.items():
+        f.write(f"{name} = {value}\n")
+```

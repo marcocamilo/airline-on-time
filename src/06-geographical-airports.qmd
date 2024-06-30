@@ -1,0 +1,235 @@
+---
+title: 'Geographical Visualization: How do delays vary by airport?'
+jupyter: python3
+format: 
+  html:
+    code-fold: true
+execute: 
+  cache: true
+---
+
+
+
+```{python}
+import pandas as pd
+import numpy as np
+import airportsdata
+import numpy as np
+from numpy import pi, sin, cos
+import plotly.express as px
+import plotly.graph_objects as go
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+figsize = (14,8)
+plt.rcParams['figure.figsize'] = figsize
+plt.rc('font', size=16)
+sns.set_style("darkgrid")
+
+df = pd.read_parquet('./data/interim/04-airline_2m.parquet', columns=['FlightDate',
+                                                                       'Origin','OriginState',
+                                                                       'Dest','DestState',
+                                                                       'DepDel15','ArrDel15'])
+airports = pd.DataFrame.from_dict(airportsdata.load('IATA'), orient='index')
+```
+
+## Aggregate Airports
+
+```{python}
+delays = df#.query("((DepDel15 >= 1) | (ArrDel15 >= 1))")
+
+dep_delay_airports = delays.groupby(['Origin']).agg({'DepDel15': ['sum', 'mean']}).reset_index()
+dep_delay_airports.columns = ['Origin', 'DepDel15_sum', 'DepDel15_mean']
+
+arr_delay_airports = delays.groupby(['Dest']).agg({'ArrDel15': ['sum', 'mean']}).reset_index()
+arr_delay_airports.columns = ['Dest', 'ArrDel15_sum', 'ArrDel15_mean']
+
+display(dep_delay_airports.head())
+display(arr_delay_airports.head())
+```
+
+### Distributions
+
+```{python}
+sns.histplot(dep_delay_airports['DepDel15_sum'])
+sns.histplot(arr_delay_airports['ArrDel15_sum'])
+plt.title('Distribution of total delays')
+plt.legend(['Departure', 'Arrival'])
+# plt.savefig('./output/img/airport-delay-distribution.png')
+plt.show()
+```
+
+```{python}
+sns.histplot(dep_delay_airports['DepDel15_mean'])
+sns.histplot(arr_delay_airports['ArrDel15_mean'])
+plt.title('Distribution of mean delays')
+plt.legend(['Departure', 'Arrival'])
+# plt.savefig('./output/img/airport-delay-distribution.png')
+plt.show()
+```
+
+```{python}
+fig, axes = plt.subplots(1,2)
+
+sns.histplot(dep_delay_airports['DepDel15_sum'], ax=axes[0])
+sns.histplot(arr_delay_airports['ArrDel15_sum'], ax=axes[0])
+sns.histplot(dep_delay_airports['DepDel15_mean'], ax=axes[1])
+sns.histplot(arr_delay_airports['ArrDel15_mean'], ax=axes[1])
+
+fig.suptitle('Distribution of delay metrics')
+fig.legend(['Departure', 'Arrival'])
+axes[0].set_title('Sum of delays')
+axes[1].set_title('Mean of delays')
+
+plt.tight_layout()
+plt.savefig('./output/img/airport-delay-distributions.png', bbox_inches='tight')
+plt.show()
+```
+
+```{python}
+x = arr_delay_airports['ArrDel15_mean']
+sns.histplot(x)
+plt.show()
+```
+
+## Merge Coordinates
+
+```{python}
+dep_delay_airports = dep_delay_airports.merge(airports[['iata','lat','lon']], left_on='Origin', right_on='iata').drop(columns=['iata'])
+arr_delay_airports = arr_delay_airports.merge(airports[['iata','lat','lon']], left_on='Dest', right_on='iata', suffixes=['_origin', '_dest']).drop(columns=['iata'])
+
+display(dep_delay_airports.head())
+display(arr_delay_airports.head())
+print(dep_delay_airports.shape)
+```
+
+## Bubble Map
+
+### Total Departure Delays
+
+```{python}
+data = dep_delay_airports
+target = 'DepDel15_sum'
+
+data = data.sort_values(by=target, ascending=False).reset_index()
+limits = [(0,5),(5,11),(11,21),(21,50),(50,100),(100,390)]
+colors = ["royalblue","crimson","lightseagreen","orange","white","lightgrey"]
+scale = 0.125
+```
+
+```{python}
+#| fig-column: page-right
+fig = go.Figure()
+
+for i in range(len(limits)):
+    lim = limits[i]
+    df_sub = data[lim[0]:lim[1]]
+    fig.add_trace(go.Scattergeo(
+        # locationmode = 'country names',
+        lon = df_sub['lon'],
+        lat = df_sub['lat'],
+        text = (df_sub.index + 1).astype('str') + '. ' + df_sub['Origin'] + ' – ' + df_sub[target].astype('str'),
+        marker = dict(
+            size = df_sub[target] * scale,
+            color = colors[i],
+            line_color='rgb(40,40,40)',
+            line_width=0.5,
+            sizemode = 'area'
+        ),
+        name = '{0} - {1}'.format(lim[0],lim[1])))
+
+fig.update_layout(
+    margin=dict(l=10, r=10, t=10, b=10),
+    showlegend=True,
+    height=600,
+    geo = dict(
+        scope = 'north america',
+        showland = True,
+        landcolor = "rgb(212, 212, 212)",
+        countrycolor = "rgb(255, 255, 255)",
+        showsubunits = True,
+        subunitcolor = "rgb(255, 255, 255)",
+        showlakes = True,
+        lakecolor = "rgb(255, 255, 255)",
+        showcountries = True,
+        resolution = 50,
+        projection_type = 'conic conformal',
+        lonaxis_range= [ -140.0, -55.0 ],
+        lataxis_range= [ 20.0, 60.0 ],
+        showcoastlines=True,
+        coastlinecolor='black',
+        coastlinewidth=0.7
+    ),
+)
+
+fig.show()
+```
+
+```{python}
+fig.write_html("./output/dep-delay-airports.html")
+```
+
+### Mean Arrival Delays
+
+```{python}
+data = arr_delay_airports
+target = 'ArrDel15_sum'
+
+data = data.sort_values(by=target, ascending=False).reset_index()
+```
+
+```{python}
+#| fig-column: page-right
+fig = go.Figure()
+
+for i in range(len(limits)):
+    lim = limits[i]
+    df_sub = data[lim[0]:lim[1]]
+    fig.add_trace(go.Scattergeo(
+        # locationmode = 'country names',
+        lon = df_sub['lon'],
+        lat = df_sub['lat'],
+        text = (df_sub.index + 1).astype('str') + '. ' + df_sub['Dest'] + ' – ' + df_sub[target].astype('str'),
+        marker = dict(
+            size = df_sub[target] * scale,
+            color = colors[i],
+            line_color='rgb(40,40,40)',
+            line_width=0.5,
+            sizemode = 'area'
+        ),
+        name = '{0} - {1}'.format(lim[0],lim[1])))
+
+fig.update_layout(
+    margin=dict(l=10, r=10, t=10, b=10),
+    showlegend=True,
+    height=600,
+    geo = dict(
+        scope = 'north america',
+        showland = True,
+        landcolor = "rgb(212, 212, 212)",
+        countrycolor = "rgb(255, 255, 255)",
+        showsubunits = True,
+        subunitcolor = "rgb(255, 255, 255)",
+        showlakes = True,
+        lakecolor = "rgb(255, 255, 255)",
+        showcountries = True,
+        resolution = 50,
+        projection_type = 'conic conformal',
+        lonaxis_range= [ -140.0, -55.0 ],
+        lataxis_range= [ 20.0, 60.0 ],
+        showcoastlines=True,
+        coastlinecolor='black',
+        coastlinewidth=0.7
+    ),
+)
+
+fig.show()
+```
+
+```{python}
+fig.write_html("./output/arr-delay-airports.html")
+```
+
+```{python}
+fig.write_image("./output/img/arr-delay-airports.png")
+```
