@@ -1,0 +1,103 @@
+---
+title: Airline On-Time Performance Dashboard
+format: 
+  dashboard:
+    scrolling: true
+jupyter: python3
+execute: 
+  cache: true
+---
+
+```{python}
+#| output: false
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
+import airportsdata
+
+df = pd.read_parquet('./data/interim/04-airline_2m.parquet')
+
+foreign_airlines = ['Ukraine International Airlines', 'ATA Airlines d/b/a ATA']
+
+df = df.query("~Airline_Name.isin(@foreign_airlines)")
+
+carrier_delays = df.groupby(['Airline_Name', 'Year'])[['DepDel15', 'ArrDel15']].sum().reset_index()
+carrier_delays.columns = ['Airline_Name', 'Year', 'DepDel15_sum', 'ArrDel15_sum']
+
+# Replace all instances in column Airline_Name containing America West with America West Airline
+carrier_delays.loc[carrier_delays['Airline_Name'].str.contains('America West'), 'Airline_Name'] = 'America West Airlines'
+carrier_delays['Airline_Name'] = carrier_delays['Airline_Name'].str.replace(' Inc.', '')
+
+dep_delay_airports = pd.read_parquet('./data/processed/geo-dep-delays.parquet')
+arr_delay_airports = pd.read_parquet('./data/processed/geo-arr-delays.parquet')
+
+
+```
+
+## Row
+
+```{python}
+#| title: Arrival Delays by Airport
+data = arr_delay_airports
+target = 'ArrDel15_sum'
+
+data = data.sort_values(by=target, ascending=False).reset_index()
+limits = [(0,5),(5,11),(11,21),(21,50),(50,100),(100,390)]
+colors = ["royalblue","crimson","lightseagreen","orange","white","lightgrey"]
+scale = 0.125
+
+traces = []
+
+for i in range(len(limits)):
+    lim = limits[i]
+    df_sub = data[lim[0]:lim[1]]
+    trace = go.Scattergeo(
+        # locationmode = 'country names',
+        lon = df_sub['lon'],
+        lat = df_sub['lat'],
+        text = (df_sub.index + 1).astype('str') + '. ' + df_sub['Dest'] + ' – ' + df_sub[target].astype('str'),
+        marker = dict(
+            size = df_sub[target] * scale,
+            color = colors[i],
+            line_color='rgb(40,40,40)',
+            line_width=0.5,
+            sizemode = 'area'
+        ),
+        name = '{0} - {1}'.format(lim[0],lim[1])
+    )
+    traces.append(trace)
+
+fig = go.Figure(traces)
+
+fig.update_layout(
+    # margin=dict(l=10, r=10, t=10, b=10),
+    showlegend=True,
+    # height=600,
+    geo = dict(
+        scope = 'north america',
+        showland = True,
+        landcolor = "rgb(212, 212, 212)",
+        countrycolor = "rgb(255, 255, 255)",
+        showsubunits = True,
+        subunitcolor = "rgb(255, 255, 255)",
+        showlakes = True,
+        lakecolor = "rgb(255, 255, 255)",
+        showcountries = True,
+        resolution = 50,
+        projection_type = 'conic conformal',
+        lonaxis_range= [ -140.0, -55.0 ],
+        lataxis_range= [ 20.0, 60.0 ],
+        showcoastlines=True,
+        coastlinecolor='black',
+        coastlinewidth=0.7
+    ),
+)
+```
+
+## Row
+
+```{python}
+px.bar(carrier_delays, x='Airline_Name', y='DepDel15_sum', animation_frame='Year', 
+       color='Airline_Name', range_y=[0,4700],
+       category_orders={'Airline_Name': carrier_delays['Airline_Name'].unique()})
+```

@@ -103,6 +103,11 @@ display(arr_delay_airports.head())
 print(dep_delay_airports.shape)
 ```
 
+```{python}
+dep_delay_airports.to_parquet('./data/processed/geo-dep-delays.parquet')
+arr_delay_airports.to_parquet('./data/processed/geo-arr-delays.parquet')
+```
+
 ## Bubble Map
 
 ### Total Departure Delays

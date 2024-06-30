@@ -1,5 +1,5 @@
-# Airline On-Time Performance: An Exploratory Data Analysis
-### Exploring Longitudinal Trends, Carrier Delays, and Geographic Patterns Over 34 Years in the US Airline Industry
+# Airline On-Time Performance
+### Longitudinal Trends, Carrier Delays, and Geographic Patterns in the US Airline Industry
 
 ![pandas](https://img.shields.io/badge/Pandas-white?logo=pandas&logoColor=black)
 ![numpy](https://img.shields.io/badge/NumPy-white?logo=Numpy&logoColor=grey)
@@ -10,7 +10,7 @@
 
 This project analyzes on-time performance trends from 2 million flights across 34 years of US domestic flight data, focusing on the variations across carriers, routes, airports, and time. The goal is to conduct a comprehensive exploratory data analysis (EDA) to address key industry questions, such as identifying carriers and airports with the highest frequency of flight delays, understanding the impact of departure delays on arrival times, and examining the evolution of flight delays across three decades in the US aviation industry. The findings from the EDA will be translated into an interactive visualization dashboard using Plotly.
 
-📄 **WRITE-UP**: [Project Write-Up]()  
+📄 **WRITE-UP**: [Project Write-Up](https://marcocamilo.com/portfolio/airline-performance)  
 📔 **NOTEBOOK**: [Jupyter Notebook]()  
 
 ## 🚀 Key Takeaways
