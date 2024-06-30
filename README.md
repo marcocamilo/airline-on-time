@@ -1,7 +1,5 @@
-[banner]
-
-# TITLE
-### SUBTITLE
+# Airline On-Time Performance: An Exploratory Data Analysis
+### Exploring Longitudinal Trends, Carrier Delays, and Geographic Patterns Over 34 Years in the US Airline Industry
 
 ![pandas](https://img.shields.io/badge/Pandas-white?logo=pandas&logoColor=black)
 ![numpy](https://img.shields.io/badge/NumPy-white?logo=Numpy&logoColor=grey)
